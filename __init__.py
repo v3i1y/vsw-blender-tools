@@ -10,6 +10,13 @@ if "bind_genesis8_with_rigify" in locals():
 else:
     from . import bind_genesis8_with_rigify
 
+
+if "diffeomorphic_helper" in locals():
+    importlib.reload(diffeomorphic_helper)
+else:
+    from . import diffeomorphic_helper
+
+
 bl_info = {
     "name": "VSW Blender Tools",
     "category": "Rigging",
@@ -20,9 +27,11 @@ bl_info = {
 
 
 def register():
+    diffeomorphic_helper.register()
     bind_metarig_to_rigify_rig.register()
     bind_genesis8_with_rigify.register()
 
 def unregister():
+    diffeomorphic_helper.unregister()
     bind_metarig_to_rigify_rig.unregister()
     bind_genesis8_with_rigify.unregister()
