@@ -13,7 +13,6 @@ def pose_file_path():
     filepath = os.path.expanduser(path).replace("\\", "/")
     return filepath.rstrip("/ ")
 
-
 class DiffHelperPreferences(AddonPreferences):
     bl_idname = __name__
 
@@ -92,20 +91,23 @@ class DiffHelperResetRigifyControls(Operator):
         pose_bones['thigh_parent.L']['IK_FK'] = 0
         pose_bones['thigh_parent.R']['IK_FK'] = 0
 
-        view_layers = context.active_object.data.layers
-        view_layers[0] = True
-        for i in range(1, len(view_layers) - 1):
-            view_layers[i] = False
+        for lr in ('R', 'L'):
+            for finger in ('thumb', 'f_index', 'f_middle', 'f_ring', 'f_pinky'):
+                output_bones = '["' + finger + '.01_ik.' + lr + '"]'
+                input_bones = '["' +finger + '.01.' + lr + '.001"]'
+                ctrl_bones = '["' + finger + '.01_master.' + lr + '", "' + finger + '.01.' + lr + '", "' + finger + '.02.' + lr + '", "' + finger + '.03.' + lr + '", "' + finger + '.01.' + lr + '.001"]'
+                locks = (False, True, True)
+                tooltip = 'IK to FK'
+                print(ctrl_bones)
 
-        view_layers[3] = True
-        view_layers[4] = True
-        view_layers[5] = True
-        view_layers[6] = True
-        view_layers[7] = True
-        view_layers[10] = True
-        view_layers[13] = True
-        view_layers[16] = True
-        view_layers[19] = True
+                getattr(bpy.ops.pose, "rigify_generic_snap_" + rigid)(
+                    'INVOKE_DEFAULT',
+                    output_bones=output_bones,
+                    input_bones=input_bones,
+                    ctrl_bones=ctrl_bones,
+                    locks=locks,
+                    tooltip=tooltip)
+                pose_bones[finger + '.01_ik.' + lr]['FK_IK'] = 1
 
         return{'FINISHED'}
 
@@ -130,6 +132,50 @@ class DiffHelperSetRandomPosePath(Operator):
             f.write(json.dumps(pose_files))
         return{'FINISHED'}
 
+class DiffHelperSoloLayers(Operator):
+    bl_idname = "vsw.solo_pose_layers"
+    bl_label = "Diff Helper"
+    bl_description = "Diff Helper"
+    bl_options = { "REGISTER", "UNDO" }
+    layer_indices: StringProperty()
+    def execute(self, context):
+        indices_str = self.layer_indices.split(',')
+        indices = set([ int(s) for s in indices_str if s])
+        view_layers = context.active_object.data.layers
+        for i in range(0, 31):
+            view_layers[i] = i in indices
+        return{'FINISHED'}
+
+class DiffHelperResetPose(Operator):
+    bl_idname = "vsw.reset_pose"
+    bl_label = "Diff Helper"
+    bl_description = "Diff Helper"
+    bl_options = { "REGISTER", "UNDO" }
+    layer_indices: StringProperty()
+    def execute(self, context):
+        bones = context.active_object.pose.bones
+
+        for bone in bones:
+            layer = 0
+            for i in range(0, 31):
+                if context.active_object.data.bones[bone.name].layers[i]:
+                    layer = i
+                    break
+            
+            if layer < 31 - 4:
+                bone.location = (0, 0, 0)
+                bone.rotation_euler = (0, 0, 0)
+                bone.scale = (1, 1, 1)
+
+        bones['upper_arm_parent.L']['IK_FK'] = 0
+        bones['upper_arm_parent.R']['IK_FK'] = 0
+        bones['thigh_parent.L']['IK_FK'] = 0
+        bones['thigh_parent.R']['IK_FK'] = 0
+        for lr in ('R', 'L'):
+            for finger in ('thumb', 'f_index', 'f_middle', 'f_ring', 'f_pinky'):
+                bones[finger + '.01_ik.' + lr]['FK_IK'] = 0
+        return{'FINISHED'}
+
 class DiffHelperPanel_PT_PANEL(Panel):
     bl_idname = "DiffHelper_PT_SidePanel"
     bl_label = "Diff Helper"
@@ -138,8 +184,11 @@ class DiffHelperPanel_PT_PANEL(Panel):
     bl_region_type = "UI"
 
     @classmethod
-    def poll(cls, context):
-        return True
+    def poll(self, context):
+        try:
+            return not not context.active_object.data.get("rig_id")
+        except (AttributeError, KeyError, TypeError):
+            return False
 
     pose_files_path: StringProperty(
         name="Pose Files Path",
@@ -151,15 +200,43 @@ class DiffHelperPanel_PT_PANEL(Panel):
 
         col = layout.column()
 
+        col.label(text="Settings")
         box = col.box()
         row = box.row()
         row.operator("vsw.random_pose_path", icon = "FILE_FOLDER", text = "Select Pose Directory")
-        row = box.row()
-        row.operator("vsw.reset_rigify_controls", icon = "FILE_REFRESH", text = "Reset Rigify Controls")
 
+        col.label(text="Toggle View Layers")
         box = col.box()
         row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Hide All")
+        props.layer_indices = '0'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Show All")
+        props.layer_indices = '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Primay with Fingers")
+        props.layer_indices = '3,4,7,10,13,16,5,6,19'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Primary Bones")
+        props.layer_indices = '3,4,7,10,13,16'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Tweek Bones")
+        props.layer_indices = '4,5,9,12,15,18'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Fingers")
+        props.layer_indices = '5'
+        row = box.row()
+        props = row.operator("vsw.solo_pose_layers", text="Fingers Details")
+        props.layer_indices = '6,19'
+
+        col.label(text="Load Pose")
+        box = col.box()
+        row = box.row()
+        row.operator("vsw.reset_rigify_controls", icon = "SNAP_ON", text = "Snap IK to FK")
+        row = box.row()
         row.operator("vsw.random_pose", icon = "ARMATURE_DATA", text = "Load Random Pose")
+        row = box.row()
+        row.operator("vsw.reset_pose", icon = "FILE_REFRESH", text = "Reset Pose")
 
 
 def register():
@@ -168,6 +245,8 @@ def register():
     utils.register_quietly(DiffHelperSetRandomPosePath)
     utils.register_quietly(DiffHelperResetRigifyControls)
     utils.register_quietly(DiffHelperPanel_PT_PANEL)
+    utils.register_quietly(DiffHelperSoloLayers)
+    utils.register_quietly(DiffHelperResetPose)
 
 def unregister():
     utils.unregister_quietly(DiffHelperPreferences)
@@ -175,3 +254,5 @@ def unregister():
     utils.unregister_quietly(DiffHelperSetRandomPosePath)
     utils.unregister_quietly(DiffHelperResetRigifyControls)
     utils.unregister_quietly(DiffHelperPanel_PT_PANEL)
+    utils.unregister_quietly(DiffHelperSoloLayers)
+    utils.unregister_quietly(DiffHelperResetPose)
