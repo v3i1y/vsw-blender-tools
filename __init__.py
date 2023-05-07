@@ -17,6 +17,11 @@ else:
     from . import diffeomorphic_helper
 
 
+if "canvas_helper" in locals():
+    importlib.reload(canvas_helper)
+else:
+    from . import canvas_helper
+
 bl_info = {
     "name": "VSW Blender Tools",
     "category": "Rigging",
@@ -30,8 +35,10 @@ def register():
     diffeomorphic_helper.register()
     bind_metarig_to_rigify_rig.register()
     bind_genesis8_with_rigify.register()
+    canvas_helper.register()
 
 def unregister():
     diffeomorphic_helper.unregister()
     bind_metarig_to_rigify_rig.unregister()
     bind_genesis8_with_rigify.unregister()
+    canvas_helper.unregister()
