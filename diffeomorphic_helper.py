@@ -199,6 +199,22 @@ class DiffHelperToggleShading(Operator):
 
         return{'FINISHED'}
 
+class DiffHelperToggleModifierVisbility(Operator):
+    bl_idname = "vsw.toggle_modifier_visbility"
+    bl_label = "Diff Helper"
+    bl_description = "Diff Helper"
+    bl_options = { "REGISTER", "UNDO" }
+    modifier_names: StringProperty()
+    def execute(self, context):
+        obj = context.active_object
+        meshes = [ c for c in obj.children if c.type == 'MESH']
+        modifiers = self.modifier_names.split(',')
+        for mesh in meshes:
+            for modifier in mesh.modifiers:
+                if modifier.name in modifiers:
+                    modifier.show_viewport = not modifier.show_viewport
+        return{'FINISHED'}
+
 class DiffHelperPanel_PT_PANEL(Panel):
     bl_idname = "DiffHelper_PT_SidePanel"
     bl_label = "Diff Helper"
@@ -252,6 +268,25 @@ class DiffHelperPanel_PT_PANEL(Panel):
         props = row.operator("vsw.solo_pose_layers", text="Fingers Details")
         props.layer_indices = '6,19'
 
+        col.label(text="Toggle Mesh Visibilities")
+        box = col.box()
+        row = box.row()
+        props = row.operator("vsw.toggle_modifier_visbility", text="Head")
+        props.modifier_names = 'vis_mask_head'
+        row = box.row()
+        props = row.operator("vsw.toggle_modifier_visbility", text="Arms")
+        props.modifier_names = 'vis_mask_arms'
+        row = box.row()
+        props = row.operator("vsw.toggle_modifier_visbility", text="Legs")
+        props.modifier_names = 'vis_mask_legs'
+        row = box.row()
+        props = row.operator("vsw.toggle_modifier_visbility", text="Hands")
+        props.modifier_names = 'vis_mask_hands_only'
+        row = box.row()
+        props = row.operator("vsw.toggle_modifier_visbility", text="Hands and Feet")
+        props.modifier_names = 'vis_mask_hands'
+        row = box.row()
+
         col.label(text="Shading")
         box = col.box()
         row = box.row()
@@ -280,6 +315,7 @@ def register():
     utils.register_quietly(DiffHelperSoloLayers)
     utils.register_quietly(DiffHelperResetPose)
     utils.register_quietly(DiffHelperToggleShading)
+    utils.register_quietly(DiffHelperToggleModifierVisbility)
 
 def unregister():
     utils.unregister_quietly(DiffHelperPreferences)
@@ -290,3 +326,5 @@ def unregister():
     utils.unregister_quietly(DiffHelperSoloLayers)
     utils.unregister_quietly(DiffHelperResetPose)
     utils.unregister_quietly(DiffHelperToggleShading)
+    utils.unregister_quietly(DiffHelperToggleModifierVisbility)
+
