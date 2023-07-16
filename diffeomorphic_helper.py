@@ -280,9 +280,6 @@ class DiffHelperPanel_PT_PANEL(Panel):
         props = row.operator("vsw.toggle_modifier_visbility", text="Legs")
         props.modifier_names = 'vis_mask_legs'
         row = box.row()
-        props = row.operator("vsw.toggle_modifier_visbility", text="Hands")
-        props.modifier_names = 'vis_mask_hands_only'
-        row = box.row()
         props = row.operator("vsw.toggle_modifier_visbility", text="Hands and Feet")
         props.modifier_names = 'vis_mask_hands'
         row = box.row()
