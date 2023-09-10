@@ -22,6 +22,11 @@ if "canvas_helper" in locals():
 else:
     from . import canvas_helper
 
+if "vertex_group_renderer" in locals():
+    importlib.reload(vertex_group_renderer)
+else:
+    from . import vertex_group_renderer
+
 bl_info = {
     "name": "VSW Blender Tools",
     "category": "Rigging",
@@ -36,9 +41,11 @@ def register():
     bind_metarig_to_rigify_rig.register()
     bind_genesis8_with_rigify.register()
     canvas_helper.register()
+    vertex_group_renderer.register()
 
 def unregister():
     diffeomorphic_helper.unregister()
     bind_metarig_to_rigify_rig.unregister()
     bind_genesis8_with_rigify.unregister()
     canvas_helper.unregister()
+    vertex_group_renderer.unregister()
