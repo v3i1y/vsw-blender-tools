@@ -27,6 +27,21 @@ if "vertex_group_renderer" in locals():
 else:
     from . import vertex_group_renderer
 
+if "hair_helper" in locals():
+    importlib.reload(hair_helper)
+else:
+    from . import hair_helper
+
+if "hair_thickness_adjust" in locals():
+    importlib.reload(hair_thickness_adjust)
+else:
+    from . import hair_thickness_adjust
+
+if "vr_cursor" in locals():
+    importlib.reload(vr_cursor)
+else:
+    from . import vr_cursor
+
 bl_info = {
     "name": "VSW Blender Tools",
     "category": "Rigging",
@@ -42,6 +57,9 @@ def register():
     bind_genesis8_with_rigify.register()
     canvas_helper.register()
     vertex_group_renderer.register()
+    hair_helper.register()
+    hair_thickness_adjust.register()
+    vr_cursor.register()
 
 def unregister():
     diffeomorphic_helper.unregister()
@@ -49,3 +67,9 @@ def unregister():
     bind_genesis8_with_rigify.unregister()
     canvas_helper.unregister()
     vertex_group_renderer.unregister()
+    hair_helper.unregister()
+    hair_thickness_adjust.unregister()
+    vr_cursor.unregister()
+
+def menu_func(self, context):
+    hair_helper.menu_func(self, context)
