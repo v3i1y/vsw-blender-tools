@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 import os
 import tempfile
+from datetime import datetime
 
 class RENDER_OT_vertex_group(bpy.types.Operator):
     bl_idname = "render.by_vertex_group"
@@ -46,7 +47,8 @@ class RENDER_OT_vertex_group(bpy.types.Operator):
     def render(obj):
         # Create the subfolder in the temp directory
         subfolder_name = "render_vertex_group"
-        subfolder_path = os.path.join(tempfile.gettempdir(), subfolder_name)
+        subfolder_path = os.path.join(os.path.dirname(bpy.data.filepath) if bpy.data.filepath else tempfile.gettempdir(), subfolder_name)
+        subfolder_path = os.path.join(subfolder_path, datetime.now().strftime("%Y%m%d%H%M%S%f"))
         os.makedirs(subfolder_path, exist_ok=True)  # 'exist_ok=True' ensures the function doesn't raise an error if the directory already exists
         
         # Render the image without any modifications first
