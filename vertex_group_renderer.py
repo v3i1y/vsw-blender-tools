@@ -23,6 +23,13 @@ class RENDER_OT_vertex_group(bpy.types.Operator):
         # hide all the objects in render list and  then 
         # for each object in render list, show it and call render
 
+        
+        # Create the subfolder in the temp directory
+        subfolder_name = "render_vertex_group"
+        subfolder_path = os.path.join(os.path.dirname(bpy.data.filepath) if bpy.data.filepath else tempfile.gettempdir(), subfolder_name)
+        subfolder_path = os.path.join(subfolder_path, datetime.now().strftime("%Y%m%d%H%M%S%f"))
+        os.makedirs(subfolder_path, exist_ok=True)  # 'exist_ok=True' ensures the function doesn't raise an error if the directory already exists
+
         progress = 0
         bpy.context.window_manager.progress_begin(0, len(context.scene.render_object_list))
         # hide all the objects in render list
@@ -38,18 +45,13 @@ class RENDER_OT_vertex_group(bpy.types.Operator):
         for obj in context.scene.render_object_list:
             progress += 1
             bpy.data.objects[obj.name].hide_render = False
-            RENDER_OT_vertex_group.render(bpy.data.objects[obj.name])
+            RENDER_OT_vertex_group.render(bpy.data.objects[obj.name], subfolder_path)
             bpy.data.objects[obj.name].hide_render = True
             bpy.context.window_manager.progress_update(progress)
         bpy.context.window_manager.progress_end()
         return {'FINISHED'}
 
-    def render(obj):
-        # Create the subfolder in the temp directory
-        subfolder_name = "render_vertex_group"
-        subfolder_path = os.path.join(os.path.dirname(bpy.data.filepath) if bpy.data.filepath else tempfile.gettempdir(), subfolder_name)
-        subfolder_path = os.path.join(subfolder_path, datetime.now().strftime("%Y%m%d%H%M%S%f"))
-        os.makedirs(subfolder_path, exist_ok=True)  # 'exist_ok=True' ensures the function doesn't raise an error if the directory already exists
+    def render(obj, subfolder_path):
         
         # Render the image without any modifications first
         original_render_path = os.path.join(subfolder_path, obj.name + ".original.png")
