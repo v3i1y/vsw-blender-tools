@@ -49,11 +49,24 @@ class AdjustThicknessOperator(bpy.types.Operator):
             self.report({'WARNING'}, "You must be in Edit Mode!")
             return {'CANCELLED'}
 
+class RotateAroundX(bpy.types.Operator):
+    """Rotate around X Axis interactively"""
+    bl_idname = "mesh.rotate_around_x_interactive"
+    bl_label = "Rotate Around X Axis Interactive"
+
+    def execute(self, context):
+        print("Rotate around X Axis Interactive")
+        # Call the rotate operator in interactive mode
+        bpy.ops.transform.rotate('INVOKE_DEFAULT', orient_axis='X')
+        return {'FINISHED'}
+
 # Store keymaps here to access after registration
 addon_keymaps = []
 
 def register():
+    print("Rotate around X Axis Interactive")
     bpy.utils.register_class(AdjustThicknessOperator)
+    bpy.utils.register_class(RotateAroundX)
     
     # Handle the keymap
     wm = bpy.context.window_manager
@@ -61,8 +74,14 @@ def register():
     kmi = km.keymap_items.new(AdjustThicknessOperator.bl_idname, 'D', 'PRESS', ctrl=False, shift=False)
     addon_keymaps.append((km, kmi))
 
+    # km = wm.keyconfigs.addon.keymaps.new(name='Mesh', space_type='EMPTY')
+    kmi = km.keymap_items.new(RotateAroundX.bl_idname, 'D', 'PRESS', ctrl=True, shift=False)
+    addon_keymaps.append((km, kmi))
+
+
 def unregister():
     bpy.utils.unregister_class(AdjustThicknessOperator)
+    bpy.utils.unregister_class(RotateAroundX)
     
     # Unregister the keymaps
     for km, kmi in addon_keymaps:
