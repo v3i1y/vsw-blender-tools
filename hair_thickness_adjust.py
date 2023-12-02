@@ -55,16 +55,14 @@ class RotateAroundX(bpy.types.Operator):
     bl_label = "Rotate Around X Axis Interactive"
 
     def execute(self, context):
-        print("Rotate around X Axis Interactive")
         # Call the rotate operator in interactive mode
-        bpy.ops.transform.rotate('INVOKE_DEFAULT', orient_axis='X')
+        bpy.ops.transform.rotate('INVOKE_DEFAULT', orient_axis='X', orient_type='NORMAL')
         return {'FINISHED'}
 
 # Store keymaps here to access after registration
 addon_keymaps = []
 
 def register():
-    print("Rotate around X Axis Interactive")
     bpy.utils.register_class(AdjustThicknessOperator)
     bpy.utils.register_class(RotateAroundX)
     
