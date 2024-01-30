@@ -15,6 +15,23 @@ import tempfile
 import math
 from datetime import datetime
 
+def render_image(file_path):
+    bpy.context.scene.render.filepath = file_path
+    bpy.ops.render.render(write_still=True)
+
+    # check if image is empty (all pixels are transparent) and delete it if it is
+    image = bpy.data.images.load(file_path)
+    image.scale(1, 1)
+    is_empty = image.pixels[0] == 0 and image.pixels[1] == 0 and image.pixels[2] == 0 and image.pixels[3] == 0
+
+    # delete image and file
+    if is_empty:
+        bpy.data.images.remove(image)
+        os.remove(file_path)
+
+    return is_empty
+
+
 def get_centroid(vertices):
     if len(vertices) == 0:
         return mathutils.Vector((0, 0, 0))
@@ -83,97 +100,156 @@ class RENDER_OT_vertex_group(bpy.types.Operator):
         subfolder_path = os.path.join(subfolder_path, datetime.now().strftime("%Y%m%d%H%M%S%f"))
         os.makedirs(subfolder_path, exist_ok=True)  # 'exist_ok=True' ensures the function doesn't raise an error if the directory already exists
 
+
+        # make render visibility consistenti with viewport visibility for ALL objects and collections
+        for obj in bpy.data.objects:
+            obj.hide_render = obj.hide or obj.hide_viewport
+
+        for collection in bpy.data.collections:
+            should_hide = collection.hide_viewport
+            for view_layer in bpy.context.scene.view_layers:
+                layer_collection = view_layer.layer_collection.children.get(collection.name)
+                if layer_collection:
+                    hide_viewport = should_hide or layer_collection.hide_viewport
+            collection.hide_render = hide_viewport
+
         # make an render of the original frame
-        bpy.context.scene.render.filepath = os.path.join(subfolder_path, "scene.png")
-        bpy.ops.render.render(write_still=True)
+        render_image(os.path.join(subfolder_path, "scene.obj.png"))
 
-        progress = 0
-        bpy.context.window_manager.progress_begin(0, len(context.scene.render_object_list))
-        # hide all the objects in render list
-        for obj in context.scene.render_object_list:
-            progress += 1
-            bpy.context.window_manager.progress_update(progress)
-            bpy.data.objects[obj.name].hide_render = True
-        bpy.context.window_manager.progress_end()
 
-        progress = 0
-        bpy.context.window_manager.progress_begin(0, len(context.scene.render_object_list))
-        # for each object in render list, show it and call render
-        for obj in context.scene.render_object_list:
-            progress += 1
-            bpy.data.objects[obj.name].hide_render = False
-            RENDER_OT_vertex_group.render(bpy.data.objects[obj.name], subfolder_path)
-            bpy.data.objects[obj.name].hide_render = True
-            bpy.context.window_manager.progress_update(progress)
-        bpy.context.window_manager.progress_end()
+        object_names_to_render_per_group = [item.name for item in context.scene.render_object_list]
+        object_names_always_present = [item.name for item in context.scene.render_object_list_always]
+
+        # Hide all objects except for those always present
+        for obj in bpy.data.objects:
+            bpy.data.objects[obj.name].hide_render = not obj.name in object_names_always_present
+
+        # Group Objects By Render Groups
+        render_groups = {}
+        for name in object_names_to_render_per_group:
+            if '#' in name:
+                group_name = name.split('#')[0]
+            else:
+                group_name = name
+            if group_name not in render_groups:
+                render_groups[group_name] = []
+            render_groups[group_name].append(bpy.data.objects[name])
+
+        for (group_name, group_objects) in render_groups.items():
+            for obj in group_objects:
+                bpy.data.objects[obj.name].hide_render = False
+            RENDER_OT_vertex_group.render(group_name, group_objects, subfolder_path)
+            for obj in group_objects:
+                bpy.data.objects[obj.name].hide_render = not obj.name in object_names_always_present
         return {'FINISHED'}
 
-    def render(obj, subfolder_path):
-        
-        is_mesh = obj.type == 'MESH'
-        obj_center = (obj.matrix_world @ get_centroid(obj.data.vertices)) if is_mesh else obj.location
-        obj_zindex = get_camera_zindex(obj_center)
+    def render(group_name, objs, subfolder_path):
+        zindex = 0
+        count = 0
+
+        for obj in objs:
+            is_mesh = obj.type == 'MESH'
+            obj_center = (obj.matrix_world @ get_centroid(obj.data.vertices)) if is_mesh else obj.location
+            count += 1
+            obj_zindex = get_camera_zindex(obj_center)
+            zindex += obj_zindex
+            zindex /= count
 
         # Render the image without any modifications first
-        original_render_path = os.path.join(subfolder_path, "z" + str(obj_zindex) + "." + obj.name + ".obj.png")
-        bpy.context.scene.render.filepath = original_render_path
-        bpy.ops.render.render(write_still=True)
+        original_render_path = os.path.join(subfolder_path, "z" + str(zindex) + "." + group_name + ".obj.png")
+        render_image(original_render_path)
+        subsubfolder_path = os.path.join(subfolder_path, group_name + ".groups")
+        for obj in objs:
+            for group in obj.vertex_groups:
+                if group.name.startswith("render_group"):
 
-        if not is_mesh:
-            # no more things to render if it's not a mesh
-            return
-        subsubfolder_path = os.path.join(subfolder_path, obj.name + ".groups")
-        for group in obj.vertex_groups:
-            if group.name.startswith("render_group"):
-
-                # include vertices with weight > 0.5
-                vertices = []
-                for v in obj.data.vertices:
-                    for vg in v.groups:
-                        if vg.weight > 0.5 and vg.group == group.index:
-                            vertices.append(v.co @ obj.matrix_world)
-                            break
-                if not is_any_vertex_in_camera_view(vertices):
-                    continue
-            
-                mod = obj.modifiers.new(name="Temp Mask", type='MASK')
-                mod.vertex_group = group.name
-                group_center = get_centroid(vertices)
-                group_zindex = get_camera_zindex(group_center)
-                # Update the scene so the modifier is applied
-                bpy.context.view_layer.update()
-                # remove render_group or render_group_ from the group name
-                group_name_for_file = group.name.replace("render_group_", "").replace("render_group", "")
-                os.makedirs(subsubfolder_path, exist_ok=True)
-                render_path = os.path.join(subsubfolder_path, "z" + str(group_zindex) + "." + obj.name + "." + group_name_for_file + ".png")
-                bpy.context.scene.render.filepath = render_path
-                bpy.ops.render.render(write_still=True)
-                # Remove the temporary mask modifier
-                obj.modifiers.remove(mod)
+                    # include vertices with weight > 0.5
+                    vertices = []
+                    for v in obj.data.vertices:
+                        for vg in v.groups:
+                            if vg.weight > 0.5 and vg.group == group.index:
+                                vertices.append(v.co @ obj.matrix_world)
+                                break
+                    # if not is_any_vertex_in_camera_view(vertices):
+                    #     continue
+                
+                    mod = obj.modifiers.new(name="Temp Mask", type='MASK')
+                    mod.vertex_group = group.name
+                    group_center = get_centroid(vertices)
+                    group_zindex = get_camera_zindex(group_center)
+                    # Update the scene so the modifier is applied
+                    bpy.context.view_layer.update()
+                    # remove render_group or render_group_ from the group name
+                    group_name_for_file = group.name.replace("render_group_", "").replace("render_group", "")
+                    os.makedirs(subsubfolder_path, exist_ok=True)
+                    render_path = os.path.join(subsubfolder_path, "z" + str(group_zindex) + "." + obj.name + "." + group_name_for_file + ".png")
+                    # bpy.context.scene.render.filepath = render_path
+                    # bpy.ops.render.render(write_still=True)
+                    render_image(render_path)
+                    # Remove the temporary mask modifier
+                    obj.modifiers.remove(mod)
 
 
 class OBJECT_OT_add_object(bpy.types.Operator):
     bl_idname = "object.add_object_to_list"
     bl_label = "+"
+
+    list_name: bpy.props.StringProperty()
     
     def execute(self, context):
+        list = getattr(context.scene, self.list_name)
         for obj in context.selected_objects:
-            item = context.scene.render_object_list.add()
+            item = list.add()
             item.name = obj.name
         return {'FINISHED'}
 
 class OBJECT_OT_remove_object(bpy.types.Operator):
     bl_idname = "object.remove_object_from_list"
     bl_label = "-"
+
+    list_name: bpy.props.StringProperty()
     
     def execute(self, context):
-        list_index = context.scene.render_object_list_index
-        context.scene.render_object_list.remove(list_index)
+        list = getattr(context.scene, self.list_name)
+        list_index = getattr(context.scene, self.list_name + "_index")
+        list.remove(list_index)
         return {'FINISHED'}
 
 class OBJECT_UL_object_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         layout.label(text=item.name)
+
+
+class RENDER_OT_swap_width_height(bpy.types.Operator):
+    bl_idname = "render.swap_width_height"
+    bl_label = "Swap Width and Height"
+    bl_description = "Swaps the width and height of the render"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        width = context.scene.render_groups_width
+        height = context.scene.render_groups_height
+        context.scene.render_groups_width = height
+        context.scene.render_groups_height = width
+        return {'FINISHED'}
+
+    # bl_idname = "render.render_res_portrait"
+    # bl_label = "Render Portrait"
+    # bl_description = "Renders the scene in portrait mode"
+    # bl_options = {'REGISTER', 'UNDO'}
+
+    
+    # portrait: bpy.props.BoolProperty(name="Portrait", default=True)
+
+    # def execute(self, context):
+    #     width = context.scene.render_groups_width
+    #     height = context.scene.render_groups_height
+    #     if self.portrait == width > height:
+    #         context.scene.render_groups_width = height
+    #         context.scene.render_groups_height = width
+    #     return {'FINISHED'}
+
+    
 
 class RENDER_PT_vertex_group_panel(bpy.types.Panel):
     bl_label = "Render by Vertex Group"
@@ -186,12 +262,65 @@ class RENDER_PT_vertex_group_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
+        layout.label(text="Always Present")
+        layout.template_list("OBJECT_UL_object_list", "", scene, "render_object_list_always", scene, "render_object_list_always_index")
+        row = layout.row()
+        props = row.operator("object.add_object_to_list")
+        props.list_name = "render_object_list_always"
+        props = row.operator("object.remove_object_from_list")
+        props.list_name = "render_object_list_always"
+
+        layout.label(text="Render Groups")
         layout.template_list("OBJECT_UL_object_list", "", scene, "render_object_list", scene, "render_object_list_index")
         row = layout.row()
-        row.operator("object.add_object_to_list")
-        row.operator("object.remove_object_from_list")
+        props = row.operator("object.add_object_to_list")
+        props.list_name = "render_object_list"
+        props = row.operator("object.remove_object_from_list")
+        props.list_name = "render_object_list"
 
+        layout.label(text="Render Size")
+        row = layout.row()
+        row.prop(scene, "render_focal_length")
+        row = layout.row()
+        row.prop(scene, "render_focal_object")
+        row = layout.row()
+        row.prop(scene, "render_groups_width")
+        row.prop(scene, "render_groups_height")
+        row = layout.row()
+        row.operator("render.swap_width_height")
+
+        layout.label(text="")
         layout.operator("render.by_vertex_group")
+
+def raycast_camera():
+    camera = bpy.context.scene.camera
+    scene = bpy.context.scene
+    camera_matrix = camera.matrix_world.normalized()
+    ray_direction = camera_matrix.to_3x3() @ mathutils.Vector((0.0, 0.0, -1.0))
+    ray_origin = camera_matrix.to_translation()
+    result, location, normal, index, object, matrix = scene.ray_cast(
+        bpy.context.view_layer.depsgraph, ray_origin, ray_direction)
+    return location if result else mathutils.Vector((0.0, 0.0, 0.0))
+
+def update_resolution(self, context):
+    render = context.scene.render
+    render.resolution_x = context.scene.render_groups_width
+    render.resolution_y = context.scene.render_groups_height
+
+    camera = bpy.context.scene.camera
+
+    # before adjust focal length, adjust camera location so that the relative size of the subject is the about the same
+    old_focal_length = camera.data.lens
+    new_focal_length = context.scene.render_focal_length
+    subject_location = raycast_camera() if context.scene.render_focal_object is None else context.scene.render_focal_object.location
+    current_distance = (camera.location - subject_location).length
+    new_distance = (new_focal_length * current_distance) / old_focal_length
+    direction_vector = (subject_location - camera.location).normalized()
+    new_camera_location = subject_location - direction_vector * new_distance
+
+    camera.location = new_camera_location
+    camera.data.lens = new_focal_length
+
 
 def register():
     bpy.utils.register_class(RENDER_OT_vertex_group)
@@ -199,9 +328,20 @@ def register():
     bpy.utils.register_class(OBJECT_UL_object_list)
     bpy.utils.register_class(OBJECT_OT_add_object)
     bpy.utils.register_class(OBJECT_OT_remove_object)
+    bpy.utils.register_class(RENDER_OT_swap_width_height)
 
     bpy.types.Scene.render_object_list = bpy.props.CollectionProperty(type=bpy.types.PropertyGroup)
     bpy.types.Scene.render_object_list_index = bpy.props.IntProperty()
+    
+    bpy.types.Scene.render_object_list_always = bpy.props.CollectionProperty(type=bpy.types.PropertyGroup)
+    bpy.types.Scene.render_object_list_always_index = bpy.props.IntProperty()
+
+
+    bpy.types.Scene.render_focal_object = bpy.props.PointerProperty(type=bpy.types.Object, name="Focal Point")
+
+    bpy.types.Scene.render_focal_length = bpy.props.IntProperty(name="Focal Length", default=50, min=20, max=200, update=update_resolution)
+    bpy.types.Scene.render_groups_width = bpy.props.IntProperty(name="Width", default=1080, update=update_resolution)
+    bpy.types.Scene.render_groups_height = bpy.props.IntProperty(name="Height", default=1080, update=update_resolution)
 
 
 def unregister():
@@ -210,9 +350,16 @@ def unregister():
     bpy.utils.unregister_class(OBJECT_UL_object_list)
     bpy.utils.unregister_class(OBJECT_OT_add_object)
     bpy.utils.unregister_class(OBJECT_OT_remove_object)
+    bpy.utils.unregister_class(RENDER_OT_swap_width_height)
 
     del bpy.types.Scene.render_object_list
     del bpy.types.Scene.render_object_list_index
+
+    del bpy.types.Scene.render_object_list_always
+    del bpy.types.Scene.render_object_list_always_index
+
+    del bpy.types.Scene.render_groups_width
+    del bpy.types.Scene.render_groups_height
 
 if __name__ == "__main__":
     register()
