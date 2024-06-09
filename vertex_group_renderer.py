@@ -15,21 +15,22 @@ import tempfile
 import math
 from datetime import datetime
 
-def render_image(file_path):
+def render_image(file_path, file_format="PNG"):
     bpy.context.scene.render.filepath = file_path
+    bpy.context.scene.render.image_settings.file_format = file_format
     bpy.ops.render.render(write_still=True)
 
     # check if image is empty (all pixels are transparent) and delete it if it is
-    image = bpy.data.images.load(file_path)
-    image.scale(1, 1)
-    is_empty = image.pixels[0] == 0 and image.pixels[1] == 0 and image.pixels[2] == 0 and image.pixels[3] == 0
+    # image = bpy.data.images.load(file_path)
+    # image.scale(1, 1)
+    # is_empty = image.pixels[0] == 0 and image.pixels[1] == 0 and image.pixels[2] == 0 and image.pixels[3] == 0
 
-    # delete image and file
-    if is_empty:
-        bpy.data.images.remove(image)
-        os.remove(file_path)
+    # # delete image and file
+    # if is_empty:
+    #     bpy.data.images.remove(image)
+    #     os.remove(file_path)
 
-    return is_empty
+    # return is_empty
 
 
 def get_centroid(vertices):
@@ -292,6 +293,56 @@ class RENDER_PT_vertex_group_panel(bpy.types.Panel):
         layout.label(text="")
         layout.operator("render.by_vertex_group")
 
+class RENDER_PT_render_thumbnail(bpy.types.Panel):
+    bl_label = "Render Thumbnail"
+    bl_idname = "RENDER_PT_render_thumbnail"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Item"
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("render.render_thumbnail")
+
+class RENDER_OT_render_thumbnail(bpy.types.Operator):
+    bl_idname = "render.render_thumbnail"
+    bl_label = "Render Thumbnail"
+    bl_description = "Renders the scene as a thumbnail"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # Create the subfolder in the temp directory
+        # make render visibility consistenti with viewport visibility for ALL objects and collections
+        for obj in bpy.data.objects:
+            obj.hide_render = obj.hide or obj.hide_viewport
+
+        for collection in bpy.data.collections:
+            should_hide = collection.hide_viewport
+            for view_layer in bpy.context.scene.view_layers:
+                layer_collection = view_layer.layer_collection.children.get(collection.name)
+                if layer_collection:
+                    hide_viewport = should_hide or layer_collection.hide_viewport
+            collection.hide_render = hide_viewport
+
+        # make an render of the original frame
+        render_image(os.path.join(os.path.dirname(bpy.data.filepath), "folder.jpg"), "JPEG")
+        return {'FINISHED'}
+
+
+class ViewportFlipOperator(bpy.types.Operator):
+    """Flip the viewport view horizontally"""
+    bl_idname = "view3d.flip_viewport_view"
+    bl_label = "Flip Viewport View"
+    bl_options = {'REGISTER', 'UNDO'} 
+
+    def execute(self, context):
+        # Get the active camera if exists
+        cam = bpy.context.scene.camera 
+        if cam:
+            cam.scale.x = -cam.scale.x
+        else:
+            self.report({'WARNING'}, "No active camera found")
+        return {'FINISHED'}
+
 def raycast_camera():
     camera = bpy.context.scene.camera
     scene = bpy.context.scene
@@ -329,6 +380,9 @@ def register():
     bpy.utils.register_class(OBJECT_OT_add_object)
     bpy.utils.register_class(OBJECT_OT_remove_object)
     bpy.utils.register_class(RENDER_OT_swap_width_height)
+    bpy.utils.register_class(ViewportFlipOperator)
+    bpy.utils.register_class(RENDER_OT_render_thumbnail)
+    bpy.utils.register_class(RENDER_PT_render_thumbnail)
 
     bpy.types.Scene.render_object_list = bpy.props.CollectionProperty(type=bpy.types.PropertyGroup)
     bpy.types.Scene.render_object_list_index = bpy.props.IntProperty()
@@ -351,6 +405,9 @@ def unregister():
     bpy.utils.unregister_class(OBJECT_OT_add_object)
     bpy.utils.unregister_class(OBJECT_OT_remove_object)
     bpy.utils.unregister_class(RENDER_OT_swap_width_height)
+    bpy.utils.unregister_class(ViewportFlipOperator)
+    bpy.utils.unregister_class(RENDER_OT_render_thumbnail)
+    bpy.utils.unregister_class(RENDER_PT_render_thumbnail)
 
     del bpy.types.Scene.render_object_list
     del bpy.types.Scene.render_object_list_index
